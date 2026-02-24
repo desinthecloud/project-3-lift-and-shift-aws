@@ -1,114 +1,168 @@
-# AMAZON WEB SERVICE (AWS) CLOUD FOR WEB APPLICATION SETUP [LIFT AND SHIFT]
-+ In this Project, We will be experiementing with a strategy called `LIFT AND SHIFT` for our web application setup. Lift And Shift is a strategy where application or a code base are being migrated from a local setup to the cloud environment in my case AWS. We will be migrating java based application just like the setup from [project 1](https://github.com/apotitech/DevOps_101_Projects/tree/main/PROJECT_1)
+# Project 3: AWS Cloud Setup for Web Application (Lift and Shift)
 
-##  AWS SERVICES USED
-+ Elastic Compute Cloud (EC2)
-+ Elastic Load Balancer (ELB)
-+ Autoscaling
-+ S3 bucket
-+ Amazon Certtificate Manager (ACM)
-+ Route 53
-+ Security Group
+This project migrates the multi-tier Java web application from [Project 1](https://github.com/apotitech/DevOps_101_Projects/tree/main/PROJECT_1) to AWS using a Lift and Shift strategy. The goal is to move the existing local setup to cloud infrastructure with minimal changes to the application itself.
 
-##  OTHER TOOLS 
-+ GoDaddy - For DNS resolution 
-+ jdk8
-+ maven
+![System Architecture](./images/sys_adm.png)
 
-![sys-adm](./images/sys_adm.png)
+## AWS Services Used
 
-## STEP TAKEN FOR THE LIFTING AND SHIFTING APPLICATION ON AWS
-### Step 1
-  + Log in to your AWS account
-  + Create a certificate on Amazon Certificate Manager and validate it up with the Domain we created on GoDaddy for a secure connection (HTTPS)
+| Service | Purpose |
+|---------|---------|
+| EC2 | Virtual machines for all application tiers |
+| Elastic Load Balancer | Distributes traffic to Tomcat instances |
+| Auto Scaling | Manages Tomcat instance scaling |
+| S3 | Artifact storage |
+| Amazon Certificate Manager | SSL/TLS certificate for HTTPS |
+| Route 53 | Private DNS for backend service discovery |
+| Security Groups | Network access control |
 
-### Step 2
-  + Navigate to the EC2 section from the console page and create a security group for our load balancer where we allow the inbound rules for http (port 80) and https (port 443) on any IPV4 and IPV6
-  + Create a security for our TOMCAT instances and allow inbound rule on port 8080 from load balancer security group
-  + We finally create security group for our backend services (rabbitMQ, Memcached and MySQL) and add inbound rule for MySQL (port 3306), memcached (port 11211), RabbitMQ (port 5672) and allow from only tomcat security group, also allow all traffic from its security group after we create the afore-mentioned rules, we then edit it with it
-  + We edit all the security group created to allow an inbound rule of 22 for SSH permission
+## Other Tools
 
-### Step 3
-  + Create a key pair to login to all our EC2 instances.
-  + Launch an instance for MySQL instances on Centos 7 using the bash script in [mysql.sh](./userdata/mysql.sh) as the userdata while provisioning the instance. Select the key created earlier and also in the network settings select an existing security group from the one we created for the backend services.
-  + Also, launch a Centos 7 EC2 instance where we will be using the [memcache userdata](./userdata/memcache.sh) in provisioning, the same key pair used earlier and also same security group used.
-  + We go through the same process for RabbitMQ using [bash script](./userdata/rabbitmq.sh)
-  + Verify if the provisioned instances are up and running on the EC2 Console
-    ![backend verification](./images/back_inst.png)
+- GoDaddy (domain and DNS)
+- JDK 8
+- Maven
 
-### Step 4
-  + We will update each of the private IP of the instances created in the private Route 53
-  + Navigate to Route 53 and click on `Create hosted zone`
-  + We can then create record for each of the backend services by placing their private IP and name in the record which will be used on our Tomct service
-  ![route53](./images/route53.png)
+---
 
-### Step 5
-  + Launch an ubuntu 18 instance for the Tomcat server where we will be hosting our java based artifact using the [tomcat_ubuntu.sh](./userdata/tomcat_ubuntu.sh) in the userdata section, with the same login key and security group we created for the app
-    ![final](./images/instance_final.png)
+## Step 1: SSL Certificate Setup
 
-### Step 6
-  + Let us update the application properties to our CNAME configured on Route53 in my case db01.vprofile.in, rmq01.vprofile.in and mc01.vprofile.in in the file src/main/resources/application.properties file
-  + Now we can build our artifact by running the command 
+Log in to your AWS account and navigate to Amazon Certificate Manager. Create a certificate for your domain and validate it via GoDaddy to enable a secure HTTPS connection.
 
-        mvn install
-  + After a successful build we can then see a target directory in our current directory where we have our `.war` file
+---
 
-### Step 7
-  + Create an IAM user for authentication on aws cli and attach s3 full access policy to the user
-  + Also, create a bucket using the aws cli, in my case 
+## Step 2: Security Groups
 
-        aws s3 mb s3://vprofile-artifact-storage1234
-  + We upload our built artifact through aws command line tool to the s3 buckket from the target directory
+Navigate to EC2 and create three security groups.
 
-        aws s3 cp vprofile-v2.war s3://vprofile-artifact-storage1234/vprofile-v2.war
-  + In order to upload our artifact from s3 to tomcat server, we create a role for our EC2 and attach s3fullaccess permission, then attach the IAM role in the app EC2 instance
-  + Login to the app server where we installed tomcat using SSH and then change to root user
+**Load Balancer Security Group**
+- Allow inbound HTTP (port 80) from all IPv4 and IPv6
+- Allow inbound HTTPS (port 443) from all IPv4 and IPv6
 
-        sudo -i
-  + verify if tomcat8 is running by running the command 
+**Tomcat App Security Group**
+- Allow inbound port 8080 from the load balancer security group only
 
-        systemctl status tomcat8
-  + Change the directory to /var/lib/tomcat8/webapps
+**Backend Services Security Group** (RabbitMQ, Memcached, MySQL)
+- Allow port 3306 (MySQL) from the Tomcat security group
+- Allow port 11211 (Memcached) from the Tomcat security group
+- Allow port 5672 (RabbitMQ) from the Tomcat security group
+- Allow all traffic from within the backend security group itself
 
-        cd /var/lib/tomcat8/webapps
-  + We then rmove the root directory which have the default application
+Add inbound SSH (port 22) access to all three security groups for administration.
 
-        rm -rf ROOT/
-  + Install awscli on the instance
+---
 
-         apt install awscli -y
-  
-  + Verify the s3 bucket from the cli
+## Step 3: EC2 Instance Provisioning
 
-        aws s3 ls vprofile-artifact-storage1234
-  + Download the artifact on the instance at the /tmp/ directory
+Create a key pair to use across all EC2 instances.
 
-        aws s3 cp s3://vprofile-artifact-storage1234/vprofile-v2.war /tmp/vprofile-v2.war
-  + Verify the artifact by changing directory to /tmp/
+Launch the following backend instances using CentOS 7, the shared key pair, and the backend security group. Pass each bash script as userdata during provisioning.
 
-        cd /tmp/
-  + Copy the artifact to /var/lib/tomcat8/webapps/ROOT.war to become the default application
+- MySQL: [mysql.sh](./userdata/mysql.sh)
+- Memcached: [memcache.sh](./userdata/memcache.sh)
+- RabbitMQ: [rabbitmq.sh](./userdata/rabbitmq.sh)
 
-        cp vprofile-v2.war /var/lib/tomcat8/webapps/ROOT.war
-  + We then restart tomcat8 service
+Verify all three instances are running in the EC2 console.
 
-        systemctl start tomcat8
-### Step 8
-  + Set up load balancer by creating a target group first for the app instance, then we create the application load balancer, after which we copy the url to the domain we bougt, then we verify the application by typing the `http://vprofileapp.barrydevops.com`
+![Backend Instances](./images/back_inst.png)
 
-    ![validate](./images/validate_login.png)
-    ![mysql](./images/mysql_valid.png)
-    ![rabbit](./images/rabbitmq.png)
-    ![mem_valid](./images/mem_valid.png)
-    ![index](./images/index.png)
+---
 
-### Step 9
-  + Set up autoscaling group for tomcat EC2 instance by creating an AMI of the instance which acts as a blue print of the instance
-  + We can then launch configuration for the autoscaling group based on the AMI created 
+## Step 4: Route 53 Private DNS
 
-      ![launch_conf](./images/launch_conf.png)
-  + Proceed to creating EC2 autoscaling group
+Navigate to Route 53 and create a private hosted zone. Add a DNS record for each backend instance using its private IP address. These hostnames are what the Tomcat application uses to reach each service.
 
-      ![asg](./images/asg.png)
-  + Validate all and delete all the instances running to save cost
+| Record | Points To |
+|--------|-----------|
+| db01.vprofile.in | MySQL private IP |
+| rmq01.vprofile.in | RabbitMQ private IP |
+| mc01.vprofile.in | Memcached private IP |
 
+![Route 53 Records](./images/route53.png)
+
+---
+
+## Step 5: Tomcat Instance
+
+Launch an Ubuntu 18 instance for the application server using [tomcat_ubuntu.sh](./userdata/tomcat_ubuntu.sh) as the userdata. Use the same key pair and the Tomcat app security group.
+
+![All Instances Running](./images/instance_final.png)
+
+---
+
+## Step 6: Build the Artifact
+
+Update `src/main/resources/application.properties` with the Route 53 CNAMEs from Step 4:
+
+```properties
+jdbc.url=jdbc:mysql://db01.vprofile.in:3306/accounts
+rabbitmq.address=rmq01.vprofile.in
+memcached.active.host=mc01.vprofile.in
+```
+
+Build the artifact from the project root:
+
+```bash
+mvn install
+```
+
+A successful build produces a `.war` file in the `target` directory.
+
+---
+
+## Step 7: Deploy Artifact via S3
+
+Create an IAM user with S3 full access and configure the AWS CLI with those credentials. Create an S3 bucket and upload the artifact:
+
+```bash
+aws s3 mb s3://vprofile-artifact-storage1234
+aws s3 cp vprofile-v2.war s3://vprofile-artifact-storage1234/vprofile-v2.war
+```
+
+Create an IAM role with S3 full access and attach it to the Tomcat EC2 instance. Then SSH into the app server and deploy:
+
+```bash
+sudo -i
+systemctl status tomcat8
+cd /var/lib/tomcat8/webapps
+rm -rf ROOT/
+apt install awscli -y
+aws s3 ls vprofile-artifact-storage1234
+aws s3 cp s3://vprofile-artifact-storage1234/vprofile-v2.war /tmp/vprofile-v2.war
+cd /tmp/
+cp vprofile-v2.war /var/lib/tomcat8/webapps/ROOT.war
+systemctl start tomcat8
+```
+
+---
+
+## Step 8: Load Balancer and Validation
+
+Create a target group pointing to the Tomcat instance, then set up an Application Load Balancer using that target group. Copy the load balancer URL to your GoDaddy DNS as a CNAME record.
+
+Open `http://vprofileapp.barrydevops.com` in your browser to validate the full stack.
+
+![Login Page](./images/validate_login.png)
+
+![MySQL Validation](./images/mysql_valid.png)
+
+![RabbitMQ Validation](./images/rabbitmq.png)
+
+![Memcached Validation](./images/mem_valid.png)
+
+![Index Page](./images/index.png)
+
+---
+
+## Step 9: Auto Scaling
+
+Create an AMI from the running Tomcat instance to use as a blueprint for scaling. Use that AMI to create a launch configuration, then set up an EC2 Auto Scaling group.
+
+![Launch Configuration](./images/launch_conf.png)
+
+![Auto Scaling Group](./images/asg.png)
+
+---
+
+## Cleanup
+
+Delete all running instances, the load balancer, target group, auto scaling group, and S3 bucket after validating to avoid ongoing costs.
