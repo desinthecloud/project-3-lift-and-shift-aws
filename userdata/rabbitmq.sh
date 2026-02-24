@@ -1,13 +1,8 @@
 #!/bin/bash
-sudo amazon-linux-extras install epel -y
 sudo yum update -y
 sudo yum install wget -y
-cd /tmp/
-wget http://packages.erlang-solutions.com/erlang-solutions-2.0-1.noarch.rpm
-sudo rpm -Uvh erlang-solutions-2.0-1.noarch.rpm
-sudo yum -y install erlang socat
-curl -s https://packagecloud.io/install/repositories/rabbitmq/rabbitmq-server/script.rpm.sh | sudo bash
-sudo yum install rabbitmq-server -y
+sudo yum install -y erlang
+sudo yum install -y rabbitmq-server
 sudo systemctl start rabbitmq-server
 sudo systemctl enable rabbitmq-server
 sudo systemctl status rabbitmq-server
