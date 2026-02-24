@@ -1,5 +1,5 @@
 #!/bin/bash
-sudo yum install epel-release -y
+sudo amazon-linux-extras install epel -y
 sudo yum update -y
 sudo yum install wget -y
 cd /tmp/
